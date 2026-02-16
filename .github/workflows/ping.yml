@@ -1,0 +1,21 @@
+name: Ping My Movie Sites
+on:
+  schedule:
+    # 每60分钟执行一次（UTC时间，国内时区需注意：UTC+8=北京时间，所以该表达式对应北京时间每10分钟执行）
+    - cron: '*/60 * * * *'
+  # 手动触发按钮（方便测试）
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Zeabur/Cloudflare Pages Sites
+        run: |
+          # 替换成你的影视网站地址，每行一个curl命令
+          # 格式：curl -s -o /dev/null -w "%{http_code}" 你的网址
+          curl -s -o /dev/null -w "%{http_code}" https://bad.zeabur.app
+          echo " - Zeabur影视站访问状态码：$?"
+          curl -s -o /dev/null -w "%{http_code}" https://mozila.eu.org
+          echo " - Cloudflare Pages影视站访问状态码：$?"
+        timeout-minutes: 5
