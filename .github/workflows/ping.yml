@@ -1,8 +1,8 @@
 name: Ping My Movie Sites
 on:
   schedule:
-    # 每10分钟执行一次（UTC时间）
-    - cron: '*/10 * * * *'
+    # 每50分钟执行一次（UTC时间）
+    - cron: '*/50 * * * *'
   # 手动触发按钮
   workflow_dispatch:
 
@@ -12,16 +12,31 @@ jobs:
     steps:
       - name: Ping Zeabur/Cloudflare Pages Sites
         run: |
-          # 定义函数：发送带浏览器头、跟随重定向的curl请求，并正确输出状态码
           ping_url() {
             local url=$1
             local name=$2
-            # -L：跟随重定向；-A：模拟浏览器UA；-s：静默模式；-o：丢弃响应体；-w：输出状态码
-            local status_code=$(curl -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -s -o /dev/null -w "%{http_code}" "$url" --connect-timeout 10)
-            echo "✅ $name 访问状态码：$status_code"
-            # 若状态码不是2xx/3xx，标记为失败（可选，方便排查）
-            if [[ ! $status_code =~ ^2[0-9]{2}$ && ! $status_code =~ ^3[0-9]{2}$ ]]; then
-              echo "⚠️ $name 访问异常，状态码：$status_code"
+            # 模拟完整浏览器请求头，适配Cloudflare防护
+            local status_code=$(curl -L \
+              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+              -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+              -H "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" \
+              -H "Accept-Encoding: gzip, deflate, br" \
+              -H "Connection: keep-alive" \
+              -H "Upgrade-Insecure-Requests: 1" \
+              -s -o /dev/null -w "%{http_code}" "$url" \
+              --connect-timeout 15 \
+              --max-time 30)
+            
+            # 判断状态码并添加中文提示
+            if [[ $status_code =~ ^2[0-9]{2}$ ]]; then
+              # 2xx状态码 = 访问成功
+              echo "✅ $name 访问状态码：$status_code - 访问成功"
+            elif [[ $status_code =~ ^3[0-9]{2}$ ]]; then
+              # 3xx重定向 = 访问成功（跟随重定向后有效）
+              echo "🔄 $name 访问状态码：$status_code - 重定向访问成功"
+            else
+              # 其他状态码 = 访问失败
+              echo "❌ $name 访问状态码：$status_code - 访问失败"
             fi
           }
 
