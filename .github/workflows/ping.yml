@@ -1,47 +1,75 @@
 name: Ping My Movie Sites
 on:
   schedule:
-    # 每50分钟执行一次（UTC时间）
+    # 每 50 分钟执行一次（建议改为 30 分钟更稳妥，防止部分平台 1 小时回收资源）
     - cron: '*/50 * * * *'
-  # 手动触发按钮
-  workflow_dispatch:
+  workflow_dispatch: # 支持手动触发
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Zeabur/Cloudflare Pages Sites
+      - name: Check Sites Availability
         run: |
-          ping_url() {
+          # 定义监控函数
+          check_site() {
             local url=$1
             local name=$2
-            # 模拟完整浏览器请求头，适配Cloudflare防护
-            local status_code=$(curl -L \
-              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
-              -H "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" \
-              -H "Accept-Encoding: gzip, deflate, br" \
-              -H "Connection: keep-alive" \
-              -H "Upgrade-Insecure-Requests: 1" \
-              -s -o /dev/null -w "%{http_code}" "$url" \
-              --connect-timeout 15 \
-              --max-time 30)
-            
-            # 判断状态码并添加中文提示
-            if [[ $status_code =~ ^2[0-9]{2}$ ]]; then
-              # 2xx状态码 = 访问成功
-              echo "✅ $name 访问状态码：$status_code - 访问成功"
-            elif [[ $status_code =~ ^3[0-9]{2}$ ]]; then
-              # 3xx重定向 = 访问成功（跟随重定向后有效）
-              echo "🔄 $name 访问状态码：$status_code - 重定向访问成功"
-            else
-              # 其他状态码 = 访问失败
-              echo "❌ $name 访问状态码：$status_code - 访问失败"
+            local max_retries=3
+            local count=0
+            local success=false
+
+            echo "🔍 正在检查: $name ($url) ..."
+
+            while [ $count -lt $max_retries ]; do
+              count=$((count + 1))
+              
+              # 使用 curl 获取响应，同时捕获状态码和内容快照
+              # --compressed 处理 gzip/br 压缩
+              # -L 跟随重定向
+              response=$(curl -L -s -w "%{http_code}" \
+                -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
+                -H "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" \
+                --compressed \
+                --connect-timeout 20 \
+                --max-time 40 \
+                "$url")
+
+              # 提取状态码（最后三位）
+              status_code="${response: -3}"
+              # 提取网页内容前缀（用于判断是否被拦截或为空）
+              content_preview="${response:0:100}"
+
+              if [[ $status_code =~ ^[23][0-9]{2}$ ]]; then
+                echo "✅ $name 访问成功 | 状态码: $status_code"
+                success=true
+                break
+              else
+                echo "⚠️ $name 第 $count 次尝试失败 | 状态码: $status_code | 重试中..."
+                sleep 5
+              fi
+            done
+
+            if [ "$success" = false ]; then
+              echo "❌ $name 连续 $max_retries 次访问失败！"
+              return 1
             fi
           }
 
-          # 调用函数，替换为你的真实网址
-          ping_url "https://bad.zeabur.app" "Zeabur影视站"
-          ping_url "https://mozila.eu.org" "Cloudflare Pages影视站"
-        timeout-minutes: 5
-        shell: /usr/bin/bash -e {0}
+          # --- 配置区：在此添加或修改你的网址 ---
+          # 格式: check_site "网址" "备注名称"
+          
+          # 记录失败次数
+          failed_count=0
+          
+          check_site "https://bad.zeabur.app" "Zeabur影视站" || failed_count=$((failed_count + 1))
+          check_site "https://mozila.eu.org" "Cloudflare Pages影视站" || failed_count=$((failed_count + 1))
+
+          # 如果有任何一个站点失败，则以错误状态退出，触发 GitHub 邮件提醒
+          if [ $failed_count -gt 0 ]; then
+            echo "🚨 检测到 $failed_count 个站点访问异常，请检查！"
+            exit 1
+          fi
+
+        timeout-minutes: 10
