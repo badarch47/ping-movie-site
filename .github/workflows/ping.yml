@@ -63,7 +63,6 @@ jobs:
           # 记录失败次数
           failed_count=0
           
-          check_site "https://bad.zeabur.app" "Zeabur影视站" || failed_count=$((failed_count + 1))
           check_site "https://mozila.eu.org" "Cloudflare Pages影视站" || failed_count=$((failed_count + 1))
 
           # 如果有任何一个站点失败，则以错误状态退出，触发 GitHub 邮件提醒
